@@ -4,33 +4,37 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description"
-        content="Real-time audio visualizer that generates spectrograms in your browser using WebGL. Visualise sound either from a microphone or an audio file on your device. Supports different color schemes and other customization options.">
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://calebj0seph.github.io/spectro">
-    <meta property="og:title" content="Spectro: Real-time Spectrogram Generator">
-    <meta property="og:image" content="https://calebj0seph.github.io/spectro/og-image.jpg">
-    <meta property="og:description"
-        content="Real-time audio visualizer that generates spectrograms in your browser using WebGL. Visualise sound either from a microphone or an audio file on your device.">
-    <meta name="twitter:card" content="summary">
-    <title>Spectro</title>
+        content="Practice Mandarin Chinese tones with real-time pitch visualization. See your tone contours from the microphone and compare with reference audio.">
+    <title>声普 Shengpu</title>
+    <link rel="icon" type="image/png" href="/shengpu-logo.png">
     <link href="https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
     <style>
+        html, body {
+            background: #000;
+        }
+
         body {
             margin: 0;
             padding: 0;
             height: 100vh;
             font-family: 'Roboto', sans-serif;
-            overflow-y: hidden;
+            overflow: hidden;
         }
 
-        .container {
-            height: 100%;
-            display: flex;
+        .app-shell {
+            width: 100%;
+            height: 100vh;
+            position: relative;
+            overflow: hidden;
         }
 
         .spectrograms {
-            position: relative;
-            flex: 1 1 0;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
         }
 
         .spectrograms .spectrogram {
@@ -38,18 +42,15 @@
             position: relative;
         }
 
+        .app-shell, .spectrograms, .spectrograms .spectrogram, .spectrograms .spectrogram canvas {
+            border: none;
+        }
+
         .spectrograms .spectrogram canvas {
             width: 100%;
             height: 100%;
             background-color: black;
-        }
-
-        .spectrograms .separator {
-            position: absolute;
-            top: 0;
-            right: 0;
-            bottom: 0;
-            width: 2px;
+            cursor: grab;
         }
 
         .spectrograms .spectrogram:first-child::after {
@@ -59,48 +60,82 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 2px;
+            height: 1px;
+            background: rgba(119, 119, 119, 0.3);
         }
 
-        .spectrograms .separator,
-        .spectrograms .spectrogram:first-child::after {
-            background: rgba(119, 119, 119, 0.25);
-            -webkit-backdrop-filter: blur(8px);
-            backdrop-filter: blur(8px);
+        .spectrograms.overlay .spectrogram {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+        }
+
+        .spectrograms.overlay .spectrogram:first-child::after {
+            display: none;
+        }
+
+        .spectrograms.overlay .spectrogram:last-child {
+            mix-blend-mode: screen;
+        }
+
+        .spectrograms.overlay .spectrogram:last-child .label {
+            top: auto;
+            bottom: 0;
+            border-radius: 3px 0 0 0;
+        }
+
+        .spectrograms.overlay .spectrogram .label {
+            display: none;
+        }
+
+        .spectrograms.overlay .spectrogram:last-child .frequency-overlay {
+            display: none;
         }
 
         .spectrograms .spectrogram .label {
             position: absolute;
             top: 0;
-            left: 0;
-            font-size: 12px;
+            right: 0;
+            font-size: 11px;
             font-weight: 500;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            padding: 6px 12px;
-            color: #ffffff;
-            background: rgba(53, 53, 53, 0.75);
-            -webkit-backdrop-filter: blur(8px);
+            padding: 4px 10px;
+            color: rgba(255, 255, 255, 0.6);
+            background: rgba(53, 53, 53, 0.6);
             backdrop-filter: blur(8px);
-            border-bottom-right-radius: 3px;
-            box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.25);
+            border-radius: 0 0 0 3px;
         }
 
         .controls {
             box-sizing: border-box;
-            background-color: #101010;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            background: rgba(16, 16, 16, 0.6);
+            backdrop-filter: blur(16px);
             padding: 16px;
             width: 300px;
-            flex: 0 0 auto;
             overflow-x: hidden;
             overflow-y: auto;
+            z-index: 1;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            cursor: grab;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls.dragging {
+            cursor: grabbing;
+            -webkit-user-select: none;
+               -moz-user-select: none;
+                    user-select: none;
         }
 
         @media (max-width: 800px) {
-            .spectrograms .separator {
-                display: none;
-            }
-
             .controls {
                 border-top-left-radius: 16px;
                 border-top-right-radius: 16px;
@@ -112,23 +147,118 @@
                 padding: 0;
             }
         }
+
+        .app-shell.drag-over::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 100;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+
+        .floating-buttons {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            z-index: 2;
+            display: flex;
+            gap: 8px;
+        }
+
+        .floating-btn {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(53, 53, 53, 0.7);
+            backdrop-filter: blur(8px);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .floating-btn:hover {
+            background: rgba(80, 80, 80, 0.8);
+        }
+
+        .floating-btn.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .floating-btn[data-tooltip]::before {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            right: 0;
+            white-space: nowrap;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: #333;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 12px;
+            line-height: 1;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .floating-btn[data-tooltip]:hover::before {
+            opacity: 1;
+        }
     </style>
+  <script type="module" crossorigin src="/assets/index-B5mjV-km.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-mP3YQMuE.css">
 </head>
 <body>
-    <div class="container">
+    <div class="app-shell">
         <div class="spectrograms">
             <div class="spectrogram">
-                <canvas id="leftSpectrogram"></canvas>
-                <div class="label">Left channel</div>
+                <canvas id="referenceSpectrogram"></canvas>
+                <div class="label">Reference</div>
             </div>
             <div class="spectrogram">
-                <canvas id="rightSpectrogram"></canvas>
-                <div class="label">Right channel</div>
+                <canvas id="practiceSpectrogram"></canvas>
+                <div class="label">Your voice</div>
             </div>
-            <div class="separator"></div>
         </div>
         <div class="controls"></div>
+        <div class="floating-buttons">
+            <button class="floating-btn snapshot-btn" data-tooltip="Save snapshot">
+                <i class="fa-solid fa-camera" aria-hidden="true"></i>
+            </button>
+            <button class="floating-btn overlay-toggle" data-tooltip="Compare overlay">
+                <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+            </button>
+        </div>
     </div>
-    <script src="main.js"></script>
+    <script>
+        (function () {
+            var el = document.querySelector('.controls');
+            var startY, startScroll, dragging = false;
+            el.addEventListener('mousedown', function (e) {
+                if (e.target.closest('button, input, [role="option"], [role="listbox"], [data-slider]')) return;
+                dragging = true;
+                startY = e.clientY;
+                startScroll = el.scrollTop;
+                el.classList.add('dragging');
+            });
+            window.addEventListener('mousemove', function (e) {
+                if (!dragging) return;
+                el.scrollTop = startScroll + (e.clientY - startY);
+            });
+            window.addEventListener('mouseup', function () {
+                if (!dragging) return;
+                dragging = false;
+                el.classList.remove('dragging');
+            });
+        })();
+    </script>
 </body>
 </html>

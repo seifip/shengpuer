@@ -1,14 +1,5 @@
-import Slider from '@material-ui/core/Slider';
-import Typography from '@material-ui/core/Typography';
-import { makeStyles } from '@material-ui/core/styles';
-import React, { ChangeEvent, useCallback, useRef, useEffect } from 'react';
-
-const useStyles = makeStyles(() => ({
-    sliderLabelContainer: {
-        display: 'flex',
-        justifyContent: 'space-between',
-    },
-}));
+import React, { useCallback, useRef, useEffect } from 'react';
+import { Slider } from '../components/ui/slider';
 
 export interface LabelledSliderProps {
     nameLabelId: string;
@@ -21,13 +12,6 @@ export interface LabelledSliderProps {
 }
 
 export type LabelledSlider = (props: LabelledSliderProps) => JSX.Element;
-
-const castSliderValue = (value: number | number[]) => {
-    if (typeof value === 'number') {
-        return value;
-    }
-    return value[0];
-};
 
 // This is an ugly hack to be able to update the value label very quickly. Having a prop for the
 // label and updating it as the slider is dragged causes severe stuttering of the spectrogram due to
@@ -61,33 +45,37 @@ function generateLabelledSlider(): [LabelledSlider, (value: string) => void] {
         defaultValue,
         onChange,
     }: LabelledSliderProps) => {
-        const classes = useStyles();
-
         const valueLabelRef = useRef<HTMLSpanElement | null>(null);
         useEffect(() => {
             onSpanChange(valueLabelRef.current);
         }, [valueLabelRef.current]);
 
-        const changeCallback = useCallback(
-            (_: ChangeEvent<{}>, value: number | number[]) => onChange(castSliderValue(value)),
+        const onValueChange = useCallback(
+            (values: number[]) => onChange(values[0]),
             [onChange]
         );
 
         return (
             <>
-                <div className={classes.sliderLabelContainer}>
-                    <Typography id={nameLabelId} color="textSecondary" variant="caption">
+                <div className="flex justify-between">
+                    <span
+                        id={nameLabelId}
+                        className="text-xs leading-[1.66] tracking-[0.03333em] text-muted-foreground"
+                    >
                         {nameLabel}
-                    </Typography>
-                    <Typography color="textPrimary" variant="caption" ref={valueLabelRef} />
+                    </span>
+                    <span
+                        className="text-xs leading-[1.66] tracking-[0.03333em] text-foreground"
+                        ref={valueLabelRef}
+                    />
                 </div>
                 <Slider
-                    aria-labelledby={nameLabelId}
-                    step={step}
                     min={min}
                     max={max}
-                    defaultValue={defaultValue}
-                    onChange={changeCallback}
+                    step={step}
+                    defaultValue={[defaultValue]}
+                    onValueChange={onValueChange}
+                    aria-labelledby={nameLabelId}
                 />
             </>
         );

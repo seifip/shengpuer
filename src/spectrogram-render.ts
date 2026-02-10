@@ -1,13 +1,14 @@
 import { colorRamp, Gradient, HEATED_METAL_GRADIENT } from './color-util';
 import { Circular2DBuffer, lerp } from './math-util';
-import FragmentShader from './shaders/fragment.glsl';
-import VertexShader from './shaders/vertex.glsl';
+import fragmentShaderSource from './shaders/fragment.glsl?raw';
+import vertexShaderSource from './shaders/vertex.glsl?raw';
 import { Scale } from './spectrogram';
 
 export interface RenderParameters {
     contrast: number;
     sensitivity: number;
     zoom: number;
+    viewOffset: number;
     minFrequencyHz: number;
     maxFrequencyHz: number;
     sampleRate: number;
@@ -70,11 +71,13 @@ export class SpectrogramGPURenderer {
 
     private currentScaleRange: [number, number] = [0, 0];
 
-    private currentContrast: number = 25;
+    private currentContrast: number = 10 ** (0.35 * 6) - 1;
 
-    private currentSensitivity: number = 25;
+    private currentSensitivity: number = 10 ** (0.45 * 3) - 1;
 
-    private currentZoom: number = 4;
+    private currentZoom: number = 6;
+
+    private currentViewOffset: number = 0;
 
     private resizeHandlerLastRealWidth: number = 0;
 
@@ -93,11 +96,12 @@ export class SpectrogramGPURenderer {
         contrastUniform: WebGLUniformLocation;
         sensitivityUniform: WebGLUniformLocation;
         zoomUniform: WebGLUniformLocation;
+        viewOffsetUniform: WebGLUniformLocation;
     };
 
     constructor(canvas: HTMLCanvasElement, spectrogramWidth: number, spectrogramHeight: number) {
         this.canvas = canvas;
-        const ctx = this.canvas.getContext('webgl');
+        const ctx = this.canvas.getContext('webgl', { preserveDrawingBuffer: true });
 
         if (ctx === null) {
             throw new Error('Unable to create WebGL context');
@@ -112,47 +116,21 @@ export class SpectrogramGPURenderer {
             throw new Error('OES_texture_float_linear extension is not supported');
         }
 
-        const program = this.loadProgram(VertexShader.sourceCode, FragmentShader.sourceCode);
+        const program = this.loadProgram(vertexShaderSource, fragmentShaderSource);
         this.program = {
             program,
             positionAttribute: this.ctx.getAttribLocation(program, 'aVertexPos'),
             texCoordAttribute: this.ctx.getAttribLocation(program, 'aVertexTexCoord'),
-            spectrogramSamplerUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSpectrogramSampler.variableName
-            ),
-            scaleSamplerUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uScaleSampler.variableName
-            ),
-            gradientSamplerUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uGradientSampler.variableName
-            ),
-            spectrogramOffsetUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSpectrogramOffset.variableName
-            ),
-            spectrogramLengthUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSpectrogramLength.variableName
-            ),
-            scaleRangeUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uScaleRange.variableName
-            ),
-            contrastUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uContrast.variableName
-            ),
-            sensitivityUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSensitivity.variableName
-            ),
-            zoomUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uZoom.variableName
-            ),
+            spectrogramSamplerUniform: this.getUniformLocation(program, 'uSpectrogramSampler'),
+            scaleSamplerUniform: this.getUniformLocation(program, 'uScaleSampler'),
+            gradientSamplerUniform: this.getUniformLocation(program, 'uGradientSampler'),
+            spectrogramOffsetUniform: this.getUniformLocation(program, 'uSpectrogramOffset'),
+            spectrogramLengthUniform: this.getUniformLocation(program, 'uSpectrogramLength'),
+            scaleRangeUniform: this.getUniformLocation(program, 'uScaleRange'),
+            contrastUniform: this.getUniformLocation(program, 'uContrast'),
+            sensitivityUniform: this.getUniformLocation(program, 'uSensitivity'),
+            zoomUniform: this.getUniformLocation(program, 'uZoom'),
+            viewOffsetUniform: this.getUniformLocation(program, 'uViewOffset'),
         };
 
         const [vertexBuffer, indexBuffer] = this.createFullscreenQuad();
@@ -232,6 +210,8 @@ export class SpectrogramGPURenderer {
             this.program.zoomUniform,
             this.resizeHandlerZoomOverride * this.currentZoom
         );
+        this.currentViewOffset = this.parameters!.viewOffset;
+        this.ctx.uniform1f(this.program.viewOffsetUniform, this.currentViewOffset);
 
         this.ctx.activeTexture(this.ctx.TEXTURE0);
         this.ctx.bindTexture(this.ctx.TEXTURE_2D, this.spectrogramTexture);
@@ -246,6 +226,10 @@ export class SpectrogramGPURenderer {
         this.ctx.uniform1i(this.program.gradientSamplerUniform, 2);
 
         this.ctx.drawElements(this.ctx.TRIANGLES, 6, this.ctx.UNSIGNED_SHORT, 0);
+    }
+
+    public getCurrentZoom(): number {
+        return this.resizeHandlerZoomOverride * this.currentZoom;
     }
 
     public resizeCanvas(width: number, height: number) {
@@ -266,18 +250,19 @@ export class SpectrogramGPURenderer {
 
     public updateParameters(parameters: Partial<RenderParameters>) {
         const newParameters: RenderParameters = {
-            contrast: merge(parameters.contrast, this.parameters?.contrast, 25),
-            sensitivity: merge(parameters.sensitivity, this.parameters?.sensitivity, 25),
-            zoom: merge(parameters.zoom, this.parameters?.zoom, 4),
-            minFrequencyHz: merge(parameters.minFrequencyHz, this.parameters?.minFrequencyHz, 10),
+            contrast: merge(parameters.contrast, this.parameters?.contrast, 10 ** (0.35 * 6) - 1),
+            sensitivity: merge(parameters.sensitivity, this.parameters?.sensitivity, 10 ** (0.45 * 3) - 1),
+            zoom: merge(parameters.zoom, this.parameters?.zoom, 6),
+            viewOffset: merge(parameters.viewOffset, this.parameters?.viewOffset, 0),
+            minFrequencyHz: merge(parameters.minFrequencyHz, this.parameters?.minFrequencyHz, 50),
             maxFrequencyHz: merge(
                 parameters.maxFrequencyHz,
                 this.parameters?.maxFrequencyHz,
-                12000
+                800
             ),
             sampleRate: merge(parameters.sampleRate, this.parameters?.sampleRate, 48000),
             windowSize: merge(parameters.windowSize, this.parameters?.windowSize, 4096),
-            scale: merge(parameters.scale, this.parameters?.scale, 'mel'),
+            scale: merge(parameters.scale, this.parameters?.scale, 'linear'),
             gradient: merge(parameters.gradient, this.parameters?.gradient, HEATED_METAL_GRADIENT),
         };
 
