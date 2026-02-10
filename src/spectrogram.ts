@@ -123,7 +123,11 @@ export function generateSpectrogram(
     ) {
         for (let j = 0; j < windowSize; j += 1) {
             const sampleIdx = i + j;
-            if (sampleIdx < samplesStart || sampleIdx >= samplesStart + samplesLength) {
+            if (
+                sampleIdx < samplesStart ||
+                sampleIdx >= samplesStart + samplesLength ||
+                sampleIdx >= samples.length
+            ) {
                 windowSamples[j] = 0;
             } else {
                 windowSamples[j] = samples[sampleIdx];

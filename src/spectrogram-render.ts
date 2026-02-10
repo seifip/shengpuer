@@ -1,7 +1,7 @@
 import { colorRamp, Gradient, HEATED_METAL_GRADIENT } from './color-util';
 import { Circular2DBuffer, lerp } from './math-util';
-import FragmentShader from './shaders/fragment.glsl';
-import VertexShader from './shaders/vertex.glsl';
+import fragmentShaderSource from './shaders/fragment.glsl?raw';
+import vertexShaderSource from './shaders/vertex.glsl?raw';
 import { Scale } from './spectrogram';
 
 export interface RenderParameters {
@@ -116,51 +116,21 @@ export class SpectrogramGPURenderer {
             throw new Error('OES_texture_float_linear extension is not supported');
         }
 
-        const program = this.loadProgram(VertexShader.sourceCode, FragmentShader.sourceCode);
+        const program = this.loadProgram(vertexShaderSource, fragmentShaderSource);
         this.program = {
             program,
             positionAttribute: this.ctx.getAttribLocation(program, 'aVertexPos'),
             texCoordAttribute: this.ctx.getAttribLocation(program, 'aVertexTexCoord'),
-            spectrogramSamplerUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSpectrogramSampler.variableName
-            ),
-            scaleSamplerUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uScaleSampler.variableName
-            ),
-            gradientSamplerUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uGradientSampler.variableName
-            ),
-            spectrogramOffsetUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSpectrogramOffset.variableName
-            ),
-            spectrogramLengthUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSpectrogramLength.variableName
-            ),
-            scaleRangeUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uScaleRange.variableName
-            ),
-            contrastUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uContrast.variableName
-            ),
-            sensitivityUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uSensitivity.variableName
-            ),
-            zoomUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uZoom.variableName
-            ),
-            viewOffsetUniform: this.getUniformLocation(
-                program,
-                FragmentShader.uniforms.uViewOffset.variableName
-            ),
+            spectrogramSamplerUniform: this.getUniformLocation(program, 'uSpectrogramSampler'),
+            scaleSamplerUniform: this.getUniformLocation(program, 'uScaleSampler'),
+            gradientSamplerUniform: this.getUniformLocation(program, 'uGradientSampler'),
+            spectrogramOffsetUniform: this.getUniformLocation(program, 'uSpectrogramOffset'),
+            spectrogramLengthUniform: this.getUniformLocation(program, 'uSpectrogramLength'),
+            scaleRangeUniform: this.getUniformLocation(program, 'uScaleRange'),
+            contrastUniform: this.getUniformLocation(program, 'uContrast'),
+            sensitivityUniform: this.getUniformLocation(program, 'uSensitivity'),
+            zoomUniform: this.getUniformLocation(program, 'uZoom'),
+            viewOffsetUniform: this.getUniformLocation(program, 'uViewOffset'),
         };
 
         const [vertexBuffer, indexBuffer] = this.createFullscreenQuad();

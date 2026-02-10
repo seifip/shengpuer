@@ -12,10 +12,13 @@ import { PINYIN_SYLLABLES, TONE_GROUPS, DEFAULT_SYLLABLE, DEFAULT_GENDER, VoiceG
 import { RenderParameters } from '../spectrogram-render';
 
 import { Button } from '../components/ui/button';
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectViewport, SelectItem, SelectGroup, SelectLabel } from '../components/ui/select';
+import { Popover, PopoverTrigger, PopoverContent } from '../components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '../components/ui/command';
 import { Separator } from '../components/ui/separator';
 import { Dialog, DialogTrigger, DialogContent, DialogClose } from '../components/ui/dialog';
-import { UploadIcon, CloseIcon, ExpandMoreIcon, SettingsIcon, CameraIcon, RecordDot } from './icons';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from '../components/ui/tooltip';
+import { Kbd } from '../components/ui/kbd';
+import { UploadIcon, CloseIcon, ExpandMoreIcon, SettingsIcon, RecordDot } from './icons';
 import generateLabelledSlider from './LabelledSlider';
 
 function useMediaQuery(query: string): boolean {
@@ -42,6 +45,45 @@ const formatPercentage = (value: number) => {
 const MALE_VOICE_PRESET = { minFrequency: 50, maxFrequency: 500 };
 const FEMALE_VOICE_PRESET = { minFrequency: 80, maxFrequency: 1000 };
 
+const STORAGE_KEY = 'shengpu-settings';
+
+interface SavedSettings {
+    selectedSyllable: string;
+    voicePreset: VoiceGender;
+    sensitivity: number;
+    contrast: number;
+    zoom: number;
+    minFrequency: number;
+    maxFrequency: number;
+    showAdvanced: boolean;
+}
+
+const SETTING_DEFAULTS: SavedSettings = {
+    selectedSyllable: DEFAULT_SYLLABLE,
+    voicePreset: DEFAULT_GENDER,
+    sensitivity: 0.45,
+    contrast: 0.35,
+    zoom: 10,
+    minFrequency: 50,
+    maxFrequency: 800,
+    showAdvanced: false,
+};
+
+function loadSettings(): SavedSettings {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) return { ...SETTING_DEFAULTS, ...JSON.parse(raw) };
+    } catch {}
+    return { ...SETTING_DEFAULTS };
+}
+
+function saveSettings(partial: Partial<SavedSettings>) {
+    try {
+        const current = loadSettings();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...current, ...partial }));
+    } catch {}
+}
+
 export type PlayState = 'stopped' | 'loading-file' | 'loading-mic' | 'playing';
 
 export interface SettingsContainerProps {
@@ -55,7 +97,6 @@ export interface SettingsContainerProps {
     onLoadPinyinPreset: (syllable: string, gender: VoiceGender) => void;
     onReplayReference: () => void;
     onReRecord: () => void;
-    onSaveImage: () => void;
 }
 
 export type SettingsContainer = (props: SettingsContainerProps) => JSX.Element;
@@ -69,6 +110,9 @@ function generateSettingsContainer(): [
     let setReferencePlayStateExport: ((playState: PlayState) => void) | null = null;
     let setPracticePlayStateExport: ((playState: PlayState) => void) | null = null;
     let setHasReferenceExport: ((has: boolean) => void) | null = null;
+    let pendingReferencePlayState: PlayState | null = null;
+    let pendingPracticePlayState: PlayState | null = null;
+    let pendingHasReference: boolean | null = null;
 
     const SettingsContainer = ({
         onStopReference,
@@ -81,20 +125,20 @@ function generateSettingsContainer(): [
         onLoadPinyinPreset,
         onReplayReference,
         onReRecord,
-        onSaveImage,
     }: SettingsContainerProps) => {
+        const saved = useMemo(loadSettings, []);
         const { current: defaultParameters } = useRef({
-            sensitivity: 0.45,
-            contrast: 0.35,
-            zoom: 6,
-            minFrequency: 50,
-            maxFrequency: 800,
+            sensitivity: saved.sensitivity,
+            contrast: saved.contrast,
+            zoom: saved.zoom,
+            minFrequency: saved.minFrequency,
+            maxFrequency: saved.maxFrequency,
         });
 
         const isMobile = useMediaQuery('(max-width: 800px)');
         const [settingsOpen, setSettingsOpen] = useState(false);
         const [presetKey, setPresetKey] = useState(0);
-        const [showAdvanced, setShowAdvanced] = useState(false);
+        const [showAdvanced, setShowAdvanced] = useState(saved.showAdvanced);
 
         const onInnerPaperClick = useCallback((e: MouseEvent) => e.stopPropagation(), []);
 
@@ -103,16 +147,20 @@ function generateSettingsContainer(): [
         const [referencePlayState, setReferencePlayState] = useState<PlayState>('stopped');
         const [practicePlayState, setPracticePlayState] = useState<PlayState>('stopped');
         const [hasReference, setHasReference] = useState(false);
-        const [selectedSyllable, setSelectedSyllable] = useState(DEFAULT_SYLLABLE);
-        const [voicePreset, setVoicePreset] = useState<VoiceGender>(DEFAULT_GENDER);
-        const [syllableFilter, setSyllableFilter] = useState('');
-        const searchRef = useRef<HTMLInputElement | null>(null);
-        const filteredSyllables = useMemo(
-            () => syllableFilter
-                ? PINYIN_SYLLABLES.filter((s) => s.startsWith(syllableFilter.toLowerCase()))
-                : PINYIN_SYLLABLES,
-            [syllableFilter]
-        );
+        const [selectedSyllable, setSelectedSyllable] = useState(saved.selectedSyllable);
+        const [voicePreset, setVoicePreset] = useState<VoiceGender>(saved.voicePreset);
+        const [comboboxOpen, setComboboxOpen] = useState(false);
+
+        const getDisplayLabel = useCallback((value: string) => {
+            if (value.startsWith('combo:')) {
+                const id = value.slice(6);
+                for (const group of TONE_GROUPS) {
+                    const combo = group.combos.find((c) => c.id === id);
+                    if (combo) return `${combo.pinyin} ${combo.meaning}`;
+                }
+            }
+            return value;
+        }, []);
         const [SensitivitySlider, setSensitivity] = useMemo(generateLabelledSlider, []);
         const [ContrastSlider, setContrast] = useMemo(generateLabelledSlider, []);
         const [ZoomSlider, setZoom] = useMemo(generateLabelledSlider, []);
@@ -122,6 +170,7 @@ function generateSettingsContainer(): [
         const onSyllableChange = useCallback(
             (value: string) => {
                 setSelectedSyllable(value);
+                saveSettings({ selectedSyllable: value });
                 onLoadPinyinPreset(value, voicePreset);
             },
             [onLoadPinyinPreset, voicePreset]
@@ -175,6 +224,7 @@ function generateSettingsContainer(): [
         const onSensitivityChange = useCallback(
             (value: number) => {
                 defaultParameters.sensitivity = value;
+                saveSettings({ sensitivity: value });
                 const scaledValue = 10 ** (value * 3) - 1;
                 onRenderParametersUpdate({ sensitivity: scaledValue });
                 setSensitivity(formatPercentage(value));
@@ -184,6 +234,7 @@ function generateSettingsContainer(): [
         const onContrastChange = useCallback(
             (value: number) => {
                 defaultParameters.contrast = value;
+                saveSettings({ contrast: value });
                 const scaledValue = 10 ** (value * 6) - 1;
                 onRenderParametersUpdate({ contrast: scaledValue });
                 setContrast(formatPercentage(value));
@@ -193,6 +244,7 @@ function generateSettingsContainer(): [
         const onZoomChange = useCallback(
             (value: number) => {
                 defaultParameters.zoom = value;
+                saveSettings({ zoom: value });
                 onRenderParametersUpdate({ zoom: value });
                 setZoom(formatPercentage(value));
             },
@@ -201,6 +253,7 @@ function generateSettingsContainer(): [
         const onMinFreqChange = useCallback(
             (value: number) => {
                 defaultParameters.minFrequency = value;
+                saveSettings({ minFrequency: value });
                 onRenderParametersUpdate({ minFrequencyHz: value });
                 setMinFrequency(formatHz(value));
             },
@@ -209,6 +262,7 @@ function generateSettingsContainer(): [
         const onMaxFreqChange = useCallback(
             (value: number) => {
                 defaultParameters.maxFrequency = value;
+                saveSettings({ maxFrequency: value });
                 onRenderParametersUpdate({ maxFrequencyHz: value });
                 setMaxFrequency(formatHz(value));
             },
@@ -219,6 +273,7 @@ function generateSettingsContainer(): [
             (preset: { minFrequency: number; maxFrequency: number }) => {
                 defaultParameters.minFrequency = preset.minFrequency;
                 defaultParameters.maxFrequency = preset.maxFrequency;
+                saveSettings({ minFrequency: preset.minFrequency, maxFrequency: preset.maxFrequency });
                 onRenderParametersUpdate({
                     minFrequencyHz: preset.minFrequency,
                     maxFrequencyHz: preset.maxFrequency,
@@ -234,9 +289,24 @@ function generateSettingsContainer(): [
             setReferencePlayStateExport = setReferencePlayState;
             setPracticePlayStateExport = setPracticePlayState;
             setHasReferenceExport = setHasReference;
+
+            // External callbacks may fire before this component mounts (async audio loads, etc).
+            // Buffer early state updates and apply them on mount to avoid hard crashes.
+            if (pendingReferencePlayState !== null) {
+                setReferencePlayState(pendingReferencePlayState);
+                pendingReferencePlayState = null;
+            }
+            if (pendingPracticePlayState !== null) {
+                setPracticePlayState(pendingPracticePlayState);
+                pendingPracticePlayState = null;
+            }
+            if (pendingHasReference !== null) {
+                setHasReference(pendingHasReference);
+                pendingHasReference = null;
+            }
         }, []);
 
-        // Update all parameters on mount
+        // Update all parameters on mount (uses saved values from localStorage)
         useEffect(() => {
             onSensitivityChange(defaultParameters.sensitivity);
             onContrastChange(defaultParameters.contrast);
@@ -245,60 +315,76 @@ function generateSettingsContainer(): [
             onMaxFreqChange(defaultParameters.maxFrequency);
             onRenderParametersUpdate({ scale: 'linear' });
             onRenderParametersUpdate({ gradient: HEATED_METAL_GRADIENT });
+            onLoadPinyinPreset(saved.selectedSyllable, saved.voicePreset);
         }, []);
 
         const content = (
             <>
                 <div className="flex justify-center mb-6">
-                    <img src="shengpuer-logo.png" alt="Shengpu" className="w-40 h-40 rounded-[32px]" />
+                    <img src="shengpu-logo.png" alt="Shengpu" className="w-40 h-40 rounded-[32px]" />
                 </div>
 
                 <p className="m-0 mb-3 opacity-40 text-[0.6rem] uppercase tracking-[0.08em]">
                     Reference
                 </p>
-                <Select
-                    value={selectedSyllable}
-                    onValueChange={onSyllableChange}
-                    onOpenChange={(open) => {
-                        if (!open) setSyllableFilter('');
-                        else setTimeout(() => searchRef.current?.focus(), 0);
-                    }}
-                >
-                    <SelectTrigger className="mb-2">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <div className="px-2 pt-1 sticky top-0 bg-[#333] z-[1]">
-                            <input
-                                ref={searchRef}
-                                className="w-full box-border px-2 py-1.5 border border-white/[0.23] rounded bg-black/30 text-foreground text-[0.8125rem] outline-none focus:border-primary placeholder:text-white/40"
-                                type="text"
-                                placeholder="Search..."
-                                value={syllableFilter}
-                                onChange={(e) => setSyllableFilter(e.target.value)}
-                                onKeyDown={(e) => e.stopPropagation()}
-                            />
-                        </div>
-                        <SelectViewport>
-                            {!syllableFilter && TONE_GROUPS.map((group) => (
-                                <SelectGroup key={group.label}>
-                                    <SelectLabel>{group.label}</SelectLabel>
-                                    {group.combos.map((c) => (
-                                        <SelectItem key={c.id} value={`combo:${c.id}`}>
-                                            {c.pinyin} {c.meaning} ({c.tones})
-                                        </SelectItem>
-                                    ))}
-                                </SelectGroup>
-                            ))}
-                            <SelectGroup>
-                                <SelectLabel>Syllables</SelectLabel>
-                                {filteredSyllables.map((s) => (
-                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            fullWidth
+                            className="mb-2 justify-between font-normal normal-case"
+                            aria-expanded={comboboxOpen}
+                        >
+                            {getDisplayLabel(selectedSyllable)}
+                            <i className="fa-solid fa-chevron-down text-[0.7em] text-muted-foreground ml-2" aria-hidden="true" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent>
+                        <Command>
+                            <CommandInput placeholder="Search syllables..." />
+                            <CommandList>
+                                <CommandEmpty>No results found.</CommandEmpty>
+                                {TONE_GROUPS.map((group) => (
+                                    <CommandGroup key={group.label} heading={group.label}>
+                                        {group.combos.map((c) => (
+                                            <CommandItem
+                                                key={c.id}
+                                                value={`${c.pinyin} ${c.meaning} ${c.tones}`}
+                                                onSelect={() => {
+                                                    onSyllableChange(`combo:${c.id}`);
+                                                    setComboboxOpen(false);
+                                                }}
+                                            >
+                                                {selectedSyllable === `combo:${c.id}` && (
+                                                    <i className="fa-solid fa-check text-[0.7em] mr-2" aria-hidden="true" />
+                                                )}
+                                                {c.pinyin} {c.meaning} ({c.tones})
+                                            </CommandItem>
+                                        ))}
+                                    </CommandGroup>
                                 ))}
-                            </SelectGroup>
-                        </SelectViewport>
-                    </SelectContent>
-                </Select>
+                                <CommandGroup heading="Syllables">
+                                    {PINYIN_SYLLABLES.map((s) => (
+                                        <CommandItem
+                                            key={s}
+                                            value={s}
+                                            onSelect={() => {
+                                                onSyllableChange(s);
+                                                setComboboxOpen(false);
+                                            }}
+                                        >
+                                            {selectedSyllable === s && (
+                                                <i className="fa-solid fa-check text-[0.7em] mr-2" aria-hidden="true" />
+                                            )}
+                                            {s}
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            </CommandList>
+                        </Command>
+                    </PopoverContent>
+                </Popover>
                 <input
                     type="file"
                     style={{ display: 'none' }}
@@ -308,107 +394,96 @@ function generateSettingsContainer(): [
                 />
                 <div className="relative mb-2">
                     {referencePlayState === 'playing' ? (
-                        <Button size="sm" fullWidth onClick={onStopReferenceClick}>
-                            Stop
-                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button size="sm" fullWidth onClick={onStopReferenceClick}>
+                                    Stop
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">Stop reference playback</TooltipContent>
+                        </Tooltip>
                     ) : (
-                        <Button variant="outline" size="sm" fullWidth onClick={onPlayFileClick} disabled={referencePlayState !== 'stopped'}>
-                            <UploadIcon /> Upload audio
-                        </Button>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button variant="outline" size="sm" fullWidth onClick={onPlayFileClick} disabled={referencePlayState !== 'stopped'}>
+                                    <UploadIcon /> Upload audio
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">Upload an audio file as reference</TooltipContent>
+                        </Tooltip>
                     )}
                     {referencePlayState === 'loading-file' && (
                         <span className="absolute top-1/2 left-1/2 -mt-3 -ml-3 inline-block w-6 h-6 border-[3px] border-white/20 border-t-secondary rounded-full animate-spin" />
                     )}
                 </div>
                 <div className="flex justify-between mb-6">
-                    <Button
-                        variant="ghost"
-                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
-                        onClick={onReplayClick}
-                        disabled={!hasReference || referencePlayState !== 'stopped'}
-                    >
-                        Replay
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
-                        onClick={onClearReference}
-                        disabled={referencePlayState === 'playing'}
-                    >
-                        Clear
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                                onClick={onReplayClick}
+                                disabled={!hasReference || referencePlayState !== 'stopped'}
+                            >
+                                Replay
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Replay reference audio</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                                onClick={onClearReference}
+                                disabled={referencePlayState === 'playing'}
+                            >
+                                Clear
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Clear reference spectrogram</TooltipContent>
+                    </Tooltip>
                 </div>
 
-                <p className="m-0 mb-3 opacity-40 text-[0.6rem] uppercase tracking-[0.08em]">
-                    Your voice
-                </p>
-                <div className="relative mb-2">
-                    {practicePlayState === 'playing' ? (
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            fullWidth
-                            onClick={onStopPracticeClick}
-                            className="spectro-recording-btn bg-[rgba(229,57,53,0.1)] border border-[rgba(229,57,53,0.3)] hover:bg-[rgba(229,57,53,0.2)]"
-                        >
-                            <RecordDot pulsing /> Recording
-                        </Button>
-                    ) : (
-                        <Button size="sm" fullWidth onClick={onPlayMicrophoneClick} disabled={practicePlayState !== 'stopped'}>
-                            <RecordDot pulsing={practicePlayState === 'loading-mic'} /> Record
-                        </Button>
-                    )}
-                </div>
-                <div className="flex justify-between mb-6">
-                    <Button
-                        variant="ghost"
-                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
-                        onClick={onReRecordClick}
-                        disabled={practicePlayState === 'loading-mic'}
-                    >
-                        Redo
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
-                        onClick={onClearPractice}
-                        disabled={practicePlayState === 'playing'}
-                    >
-                        Clear
-                    </Button>
-                </div>
-
-                <Button variant="outline" size="sm" fullWidth onClick={onSaveImage}>
-                    <CameraIcon /> Save snapshot
-                </Button>
-
-                <Separator className="mt-4 mb-6" />
+                <Separator className="mb-6" />
 
                 <div className="flex gap-2 mb-4">
-                    <Button
-                        variant={voicePreset === 'male' ? 'default' : 'outline'}
-                        size="sm"
-                        fullWidth
-                        onClick={() => {
-                            setVoicePreset('male');
-                            applyPreset(MALE_VOICE_PRESET);
-                            onLoadPinyinPreset(selectedSyllable, 'male');
-                        }}
-                    >
-                        Male
-                    </Button>
-                    <Button
-                        variant={voicePreset === 'female' ? 'default' : 'outline'}
-                        size="sm"
-                        fullWidth
-                        onClick={() => {
-                            setVoicePreset('female');
-                            applyPreset(FEMALE_VOICE_PRESET);
-                            onLoadPinyinPreset(selectedSyllable, 'female');
-                        }}
-                    >
-                        Female
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant={voicePreset === 'male' ? 'default' : 'outline'}
+                                size="sm"
+                                fullWidth
+                                onClick={() => {
+                                    setVoicePreset('male');
+                                    saveSettings({ voicePreset: 'male' });
+                                    applyPreset(MALE_VOICE_PRESET);
+                                    onLoadPinyinPreset(selectedSyllable, 'male');
+                                }}
+                            >
+                                Male
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Male voice pitch range (50–500 Hz)</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant={voicePreset === 'female' ? 'default' : 'outline'}
+                                size="sm"
+                                fullWidth
+                                onClick={() => {
+                                    setVoicePreset('female');
+                                    saveSettings({ voicePreset: 'female' });
+                                    applyPreset(FEMALE_VOICE_PRESET);
+                                    onLoadPinyinPreset(selectedSyllable, 'female');
+                                }}
+                            >
+                                Female
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Female voice pitch range (80–1000 Hz)</TooltipContent>
+                    </Tooltip>
                 </div>
 
                 <Button
@@ -416,7 +491,10 @@ function generateSettingsContainer(): [
                     size="sm"
                     fullWidth
                     className="opacity-50 text-[0.65rem] tracking-[0.05em]"
-                    onClick={() => setShowAdvanced((v) => !v)}
+                    onClick={() => setShowAdvanced((v) => {
+                        saveSettings({ showAdvanced: !v });
+                        return !v;
+                    })}
                 >
                     Advanced
                     <ExpandMoreIcon
@@ -481,11 +559,73 @@ function generateSettingsContainer(): [
                         />
                     </>
                 )}
+
+                <div className="flex-1" />
+
+                <div className="relative mt-6 mb-2">
+                    {practicePlayState === 'playing' ? (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    fullWidth
+                                    onClick={onStopPracticeClick}
+                                    className="spectro-recording-btn h-16 bg-[rgba(229,57,53,0.1)] border border-[rgba(229,57,53,0.3)] hover:bg-[rgba(229,57,53,0.2)]"
+                                >
+                                    <RecordDot pulsing /> Recording
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                                <span className="inline-flex items-center">Stop recording <Kbd keys={['Space']} /></span>
+                            </TooltipContent>
+                        </Tooltip>
+                    ) : (
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button fullWidth onClick={onPlayMicrophoneClick} disabled={practicePlayState !== 'stopped'} className="h-16">
+                                    <RecordDot pulsing={practicePlayState === 'loading-mic'} /> Record
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">
+                                <span className="inline-flex items-center">Record your voice <Kbd keys={['Space']} /></span>
+                            </TooltipContent>
+                        </Tooltip>
+                    )}
+                </div>
+                <div className="flex justify-between">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                                onClick={onReRecordClick}
+                                disabled={practicePlayState === 'loading-mic'}
+                            >
+                                Redo
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Clear and re-record</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                                onClick={onClearPractice}
+                                disabled={practicePlayState === 'playing'}
+                            >
+                                Clear
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Clear your voice spectrogram</TooltipContent>
+                    </Tooltip>
+                </div>
             </>
         );
 
         return (
-            <div>
+            <TooltipProvider delayDuration={400}>
+            <div className="flex flex-col min-h-full">
                 {isMobile ? (
                     <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
                         <DialogTrigger asChild>
@@ -524,6 +664,7 @@ function generateSettingsContainer(): [
                     content
                 )}
             </div>
+            </TooltipProvider>
         );
     };
 
@@ -533,19 +674,21 @@ function generateSettingsContainer(): [
             if (setReferencePlayStateExport !== null) {
                 setReferencePlayStateExport(playState);
             } else {
-                throw new Error('Attempt to set reference play state before component mount');
+                pendingReferencePlayState = playState;
             }
         },
         (playState) => {
             if (setPracticePlayStateExport !== null) {
                 setPracticePlayStateExport(playState);
             } else {
-                throw new Error('Attempt to set practice play state before component mount');
+                pendingPracticePlayState = playState;
             }
         },
         (has) => {
             if (setHasReferenceExport !== null) {
                 setHasReferenceExport(has);
+            } else {
+                pendingHasReference = has;
             }
         },
     ];

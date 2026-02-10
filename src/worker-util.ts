@@ -1,18 +1,19 @@
 import { SpectrogramOptions, SpectrogramResult } from './spectrogram';
 import { ACTION_COMPUTE_SPECTROGRAM, ComputeSpectrogramMessage, Message } from './worker-constants';
-// eslint-disable-next-line import/extensions
-import HelperWorker from './workers/helper.worker.ts';
 
-const WORKER_QUEUE: ((worker: HelperWorker) => void)[] = [];
-const WORKER_POOL: { worker: HelperWorker; busy: boolean }[] = [];
-for (let i = 0; i < (window.navigator.hardwareConcurrency || 4); i += 1) {
+const WORKER_QUEUE: ((worker: Worker) => void)[] = [];
+const WORKER_POOL: { worker: Worker; busy: boolean }[] = [];
+// Keep this capped: too many workers can spike memory (each loads FFT code + allocates buffers).
+const MAX_WORKERS = 4;
+const WORKER_COUNT = Math.min(window.navigator.hardwareConcurrency || 4, MAX_WORKERS);
+for (let i = 0; i < WORKER_COUNT; i += 1) {
     WORKER_POOL.push({
-        worker: new HelperWorker(),
+        worker: new Worker(new URL('./workers/helper.worker.ts', import.meta.url), { type: 'module' }),
         busy: false,
     });
 }
 
-function getFreeWorker(): Promise<HelperWorker> {
+function getFreeWorker(): Promise<Worker> {
     const workerData = WORKER_POOL.find((w) => !w.busy);
     if (workerData !== undefined) {
         workerData.busy = true;
@@ -23,7 +24,7 @@ function getFreeWorker(): Promise<HelperWorker> {
     });
 }
 
-function releaseWorker(worker: HelperWorker) {
+function releaseWorker(worker: Worker) {
     const workerData = WORKER_POOL.find((w) => w.worker === worker);
     if (workerData === undefined) {
         throw new Error('Provided worker to release is not valid');

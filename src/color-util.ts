@@ -13,6 +13,11 @@ export const HEATED_METAL_GRADIENT: Gradient = [
     { stop: 1.0, color: [255, 255, 255] },
 ];
 
+export const WHITE_GRADIENT: Gradient = [
+    { stop: 0, color: [0, 0, 0] },
+    { stop: 1.0, color: [255, 255, 255] },
+];
+
 function addGamma(u: number): number {
     if (u <= 0.0031308) {
         return 12.92 * u;

@@ -22,7 +22,6 @@ export default function initialiseControlsUi(
         loadPinyinPresetCallback: (syllable: string, gender: VoiceGender) => void;
         replayReferenceCallback: () => void;
         reRecordCallback: () => void;
-        saveImageCallback: () => void;
     }
 ): { setReferencePlayState: (state: PlayState) => void; setPracticePlayState: (state: PlayState) => void; setHasReference: (has: boolean) => void } {
     const [SettingsContainer, setReferencePlayState, setPracticePlayState, setHasReference] =
@@ -41,7 +40,6 @@ export default function initialiseControlsUi(
             onLoadPinyinPreset={props.loadPinyinPresetCallback}
             onReplayReference={props.replayReferenceCallback}
             onReRecord={props.reRecordCallback}
-            onSaveImage={props.saveImageCallback}
         />
     );
 

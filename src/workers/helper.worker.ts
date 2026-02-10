@@ -5,7 +5,12 @@ import {
     Message,
 } from '../worker-constants';
 
-self.addEventListener('message', (event: { data: Message['request'] }) => {
+const workerSelf = self as unknown as {
+    addEventListener(type: string, listener: (event: MessageEvent) => void): void;
+    postMessage(message: unknown, transfer?: Transferable[]): void;
+};
+
+workerSelf.addEventListener('message', (event: { data: Message['request'] }) => {
     const {
         data: { action, payload },
     } = event;
@@ -35,16 +40,16 @@ self.addEventListener('message', (event: { data: Message['request'] }) => {
                         inputBuffer: samples.buffer,
                     },
                 };
-                self.postMessage(response, [spectrogram.buffer, samples.buffer]);
+                workerSelf.postMessage(response, [spectrogram.buffer, samples.buffer] as Transferable[]);
             } catch (error) {
-                const response: ComputeSpectrogramMessage['response'] = { error };
-                self.postMessage(response);
+                const response: ComputeSpectrogramMessage['response'] = { error: error as Error };
+                workerSelf.postMessage(response);
             }
 
             break;
         }
         default:
-            self.postMessage({
+            workerSelf.postMessage({
                 error: new Error('Unknown action'),
             });
             break;

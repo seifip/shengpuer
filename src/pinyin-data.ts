@@ -82,5 +82,5 @@ export const PINYIN_SYLLABLES: string[] = [
     'za', 'zai', 'zan', 'zang', 'zao', 'ze', 'zei', 'zen', 'zeng', 'zha', 'zhai', 'zhan', 'zhang', 'zhao', 'zhe', 'zhei', 'zhen', 'zheng', 'zhi', 'zhong', 'zhou', 'zhu', 'zhua', 'zhuai', 'zhuan', 'zhuang', 'zhui', 'zhun', 'zhuo', 'zi', 'zong', 'zou', 'zu', 'zuan', 'zui', 'zun', 'zuo',
 ];
 
-export const DEFAULT_SYLLABLE = 'ma';
+export const DEFAULT_SYLLABLE = 'combo:fei1ji1';
 export const DEFAULT_GENDER: VoiceGender = 'female';

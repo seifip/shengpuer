@@ -6,7 +6,7 @@
     <meta name="description"
         content="Practice Mandarin Chinese tones with real-time pitch visualization. See your tone contours from the microphone and compare with reference audio.">
     <title>声普 Shengpu</title>
-    <link rel="icon" type="image/png" href="shengpuer-logo.png">
+    <link rel="icon" type="image/png" href="/shengpu-logo.png">
     <link href="https://fonts.googleapis.com/css?family=Roboto:400,500&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
     <style>
@@ -22,7 +22,7 @@
             overflow: hidden;
         }
 
-        .container {
+        .app-shell {
             width: 100%;
             height: 100vh;
             position: relative;
@@ -33,7 +33,7 @@
             position: absolute;
             top: 0;
             left: 0;
-            width: 100%;
+            right: 0;
             height: 100%;
         }
 
@@ -42,7 +42,7 @@
             position: relative;
         }
 
-        .container, .spectrograms, .spectrograms .spectrogram, .spectrograms .spectrogram canvas {
+        .app-shell, .spectrograms, .spectrograms .spectrogram, .spectrograms .spectrogram canvas {
             border: none;
         }
 
@@ -64,10 +64,40 @@
             background: rgba(119, 119, 119, 0.3);
         }
 
+        .spectrograms.overlay .spectrogram {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+        }
+
+        .spectrograms.overlay .spectrogram:first-child::after {
+            display: none;
+        }
+
+        .spectrograms.overlay .spectrogram:last-child {
+            mix-blend-mode: screen;
+        }
+
+        .spectrograms.overlay .spectrogram:last-child .label {
+            top: auto;
+            bottom: 0;
+            border-radius: 3px 0 0 0;
+        }
+
+        .spectrograms.overlay .spectrogram .label {
+            display: none;
+        }
+
+        .spectrograms.overlay .spectrogram:last-child .frequency-overlay {
+            display: none;
+        }
+
         .spectrograms .spectrogram .label {
             position: absolute;
             top: 0;
-            left: 308px;
+            right: 0;
             font-size: 11px;
             font-weight: 500;
             text-transform: uppercase;
@@ -75,9 +105,8 @@
             padding: 4px 10px;
             color: rgba(255, 255, 255, 0.6);
             background: rgba(53, 53, 53, 0.6);
-            -webkit-backdrop-filter: blur(8px);
             backdrop-filter: blur(8px);
-            border-radius: 3px;
+            border-radius: 0 0 0 3px;
         }
 
         .controls {
@@ -87,7 +116,6 @@
             left: 0;
             bottom: 0;
             background: rgba(16, 16, 16, 0.6);
-            -webkit-backdrop-filter: blur(16px);
             backdrop-filter: blur(16px);
             padding: 16px;
             width: 300px;
@@ -96,11 +124,15 @@
             z-index: 1;
             border-right: 1px solid rgba(255, 255, 255, 0.1);
             cursor: grab;
+            display: flex;
+            flex-direction: column;
         }
 
         .controls.dragging {
             cursor: grabbing;
-            user-select: none;
+            -webkit-user-select: none;
+               -moz-user-select: none;
+                    user-select: none;
         }
 
         @media (max-width: 800px) {
@@ -115,10 +147,77 @@
                 padding: 0;
             }
         }
+
+        .app-shell.drag-over::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: 100;
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 8px;
+            pointer-events: none;
+        }
+
+        .floating-buttons {
+            position: absolute;
+            bottom: 16px;
+            right: 16px;
+            z-index: 2;
+            display: flex;
+            gap: 8px;
+        }
+
+        .floating-btn {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(53, 53, 53, 0.7);
+            backdrop-filter: blur(8px);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .floating-btn:hover {
+            background: rgba(80, 80, 80, 0.8);
+        }
+
+        .floating-btn.active {
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+        }
+
+        .floating-btn[data-tooltip]::before {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: calc(100% + 6px);
+            right: 0;
+            white-space: nowrap;
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: #333;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 12px;
+            line-height: 1;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+
+        .floating-btn[data-tooltip]:hover::before {
+            opacity: 1;
+        }
     </style>
+  <script type="module" crossorigin src="/assets/index-B5mjV-km.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-mP3YQMuE.css">
 </head>
 <body>
-    <div class="container">
+    <div class="app-shell">
         <div class="spectrograms">
             <div class="spectrogram">
                 <canvas id="referenceSpectrogram"></canvas>
@@ -130,6 +229,14 @@
             </div>
         </div>
         <div class="controls"></div>
+        <div class="floating-buttons">
+            <button class="floating-btn snapshot-btn" data-tooltip="Save snapshot">
+                <i class="fa-solid fa-camera" aria-hidden="true"></i>
+            </button>
+            <button class="floating-btn overlay-toggle" data-tooltip="Compare overlay">
+                <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+            </button>
+        </div>
     </div>
     <script>
         (function () {
@@ -153,6 +260,5 @@
             });
         })();
     </script>
-    <script src="main.js"></script>
 </body>
 </html>
