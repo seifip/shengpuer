@@ -9,7 +9,7 @@ module.exports = {
         path: path.resolve(__dirname, 'dist'),
     },
     resolve: {
-        extensions: ['.ts', '.tsx', '.js', '.json'],
+        extensions: ['.ts', '.tsx', '.js', '.json', '.css'],
     },
     devServer: {
         contentBase: path.join(__dirname, 'dist'),
@@ -18,6 +18,11 @@ module.exports = {
     },
     module: {
         rules: [
+            {
+                test: /\.mjs$/,
+                include: /node_modules/,
+                type: 'javascript/auto',
+            },
             {
                 test: /\.glsl$/,
                 exclude: /node_modules/,
@@ -34,6 +39,23 @@ module.exports = {
                         },
                     },
                 ],
+            },
+            {
+                test: /\.css$/,
+                use: ['style-loader', 'css-loader', 'postcss-loader'],
+            },
+            {
+                test: /\.m?js$/,
+                include: /[\\/](@radix-ui|class-variance-authority|tailwind-merge|vaul|lucide-react)[\\/]/,
+                loader: 'babel-loader',
+                options: {
+                    presets: ['@babel/preset-env', '@babel/preset-react'],
+                    plugins: [
+                        '@babel/plugin-transform-optional-chaining',
+                        '@babel/plugin-transform-nullish-coalescing-operator',
+                        '@babel/plugin-transform-class-properties',
+                    ],
+                },
             },
             {
                 test: /\.tsx?$/,

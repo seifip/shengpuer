@@ -1,32 +1,49 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 
+import '../globals.css';
+
+import { VoiceGender } from '../pinyin-data';
 import { RenderParameters } from '../spectrogram-render';
 
 import generateSettingsContainer from './SettingsContainer';
+import { PlayState } from './SettingsContainer';
 
 export default function initialiseControlsUi(
     container: Element,
     props: {
-        stopCallback: () => void;
-        clearSpectrogramCallback: () => void;
+        stopReferenceCallback: () => void;
+        stopPracticeCallback: () => void;
+        clearReferenceCallback: () => void;
+        clearPracticeCallback: () => void;
         renderParametersUpdateCallback: (settings: Partial<RenderParameters>) => void;
         renderFromMicrophoneCallback: () => void;
         renderFromFileCallback: (file: ArrayBuffer) => void;
+        loadPinyinPresetCallback: (syllable: string, gender: VoiceGender) => void;
+        replayReferenceCallback: () => void;
+        reRecordCallback: () => void;
+        saveImageCallback: () => void;
     }
-) {
-    const [SettingsContainer, setPlayState] = generateSettingsContainer();
+): { setReferencePlayState: (state: PlayState) => void; setPracticePlayState: (state: PlayState) => void; setHasReference: (has: boolean) => void } {
+    const [SettingsContainer, setReferencePlayState, setPracticePlayState, setHasReference] =
+        generateSettingsContainer();
 
-    ReactDOM.render(
+    const root = createRoot(container);
+    root.render(
         <SettingsContainer
-            onStop={props.stopCallback}
-            onClearSpectrogram={props.clearSpectrogramCallback}
+            onStopReference={props.stopReferenceCallback}
+            onStopPractice={props.stopPracticeCallback}
+            onClearReference={props.clearReferenceCallback}
+            onClearPractice={props.clearPracticeCallback}
             onRenderParametersUpdate={props.renderParametersUpdateCallback}
             onRenderFromMicrophone={props.renderFromMicrophoneCallback}
             onRenderFromFile={props.renderFromFileCallback}
-        />,
-        container
+            onLoadPinyinPreset={props.loadPinyinPresetCallback}
+            onReplayReference={props.replayReferenceCallback}
+            onReRecord={props.reRecordCallback}
+            onSaveImage={props.saveImageCallback}
+        />
     );
 
-    return setPlayState;
+    return { setReferencePlayState, setPracticePlayState, setHasReference };
 }

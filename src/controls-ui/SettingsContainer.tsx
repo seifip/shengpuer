@@ -1,26 +1,4 @@
-import Button from '@material-ui/core/Button';
-import CircularProgress from '@material-ui/core/CircularProgress';
-import Divider from '@material-ui/core/Divider';
-import Drawer from '@material-ui/core/Drawer';
-import FormControl from '@material-ui/core/FormControl';
-import IconButton from '@material-ui/core/IconButton';
-import InputLabel from '@material-ui/core/InputLabel';
-import MenuItem from '@material-ui/core/MenuItem';
-import Paper from '@material-ui/core/Paper';
-import ScopedCssBaseline from '@material-ui/core/ScopedCssBaseline';
-import Select from '@material-ui/core/Select';
-import Typography from '@material-ui/core/Typography';
-import pink from '@material-ui/core/colors/pink';
-import { ThemeProvider, createMuiTheme, makeStyles } from '@material-ui/core/styles';
-import useMediaQuery from '@material-ui/core/useMediaQuery';
-import AudiotrackIcon from '@material-ui/icons/Audiotrack';
-import ClearIcon from '@material-ui/icons/Clear';
-import CloseIcon from '@material-ui/icons/Close';
-import MicIcon from '@material-ui/icons/Mic';
-import SettingsIcon from '@material-ui/icons/Settings';
-import StopIcon from '@material-ui/icons/Stop';
 import React, {
-    ChangeEvent,
     MouseEvent,
     useState,
     useEffect,
@@ -29,186 +7,171 @@ import React, {
     useCallback,
 } from 'react';
 
-import { GRADIENTS } from '../color-util';
-import { hzToMel, melToHz } from '../math-util';
-import { Scale } from '../spectrogram';
+import { HEATED_METAL_GRADIENT } from '../color-util';
+import { PINYIN_SYLLABLES, TONE_GROUPS, DEFAULT_SYLLABLE, DEFAULT_GENDER, VoiceGender } from '../pinyin-data';
 import { RenderParameters } from '../spectrogram-render';
 
+import { Button } from '../components/ui/button';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectViewport, SelectItem, SelectGroup, SelectLabel } from '../components/ui/select';
+import { Separator } from '../components/ui/separator';
+import { Dialog, DialogTrigger, DialogContent, DialogClose } from '../components/ui/dialog';
+import { UploadIcon, CloseIcon, ExpandMoreIcon, SettingsIcon, CameraIcon, RecordDot } from './icons';
 import generateLabelledSlider from './LabelledSlider';
 
-const controlsTheme = createMuiTheme({
-    palette: {
-        type: 'dark',
-        background: {
-            default: '#101010',
-            paper: '#222222',
-        },
-        primary: {
-            main: '#ffffff',
-        },
-        secondary: pink,
-    },
-});
-
-const useStyles = makeStyles((theme) => ({
-    select: {
-        width: '100%',
-        marginBottom: theme.spacing(2),
-    },
-    sliderLabelContainer: {
-        display: 'flex',
-        justifyContent: 'space-between',
-    },
-    divider: {
-        marginBottom: theme.spacing(2),
-    },
-    buttonContainer: {
-        position: 'relative',
-        marginBottom: theme.spacing(1),
-    },
-    buttonProgress: {
-        color: pink[500],
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        marginTop: -12,
-        marginLeft: -12,
-    },
-    lastButton: {
-        marginBottom: theme.spacing(2),
-    },
-    closeButton: {
-        marginTop: -theme.spacing(1.5),
-        marginLeft: -theme.spacing(1.5),
-        width: theme.spacing(6),
-    },
-    settingsHeader: {
-        display: 'flex',
-        justifyContent: 'flex-start',
-    },
-    settingsButton: {
-        borderTopLeftRadius: theme.spacing(2),
-        borderTopRightRadius: theme.spacing(2),
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
-        padding: `${theme.spacing(1.5)}px ${theme.spacing(3)}px`,
-    },
-    settingsDrawer: {
-        backgroundColor: 'transparent',
-    },
-    settingsDrawerInner: {
-        borderTopLeftRadius: theme.spacing(2),
-        borderTopRightRadius: theme.spacing(2),
-        maxWidth: '300px',
-        padding: theme.spacing(2),
-        boxSizing: 'border-box',
-        margin: `${theme.spacing(2)}px auto 0 auto`,
-    },
-}));
+function useMediaQuery(query: string): boolean {
+    const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+    useEffect(() => {
+        const mql = window.matchMedia(query);
+        const handler = (e: MediaQueryListEvent) => setMatches(e.matches);
+        mql.addEventListener('change', handler);
+        return () => mql.removeEventListener('change', handler);
+    }, [query]);
+    return matches;
+}
 
 const formatHz = (hz: number) => {
-    if (hz < 999.5) {
-        return `${hz.toPrecision(3)} Hz`;
-    }
+    if (hz < 999.5) return `${hz.toPrecision(3)} Hz`;
     return `${(hz / 1000).toPrecision(3)} kHz`;
 };
 
 const formatPercentage = (value: number) => {
-    if (value * 100 >= 999.5) {
-        return `${(value * 100).toPrecision(4)}%`;
-    }
+    if (value * 100 >= 999.5) return `${(value * 100).toPrecision(4)}%`;
     return `${(value * 100).toPrecision(3)}%`;
 };
+
+const MALE_VOICE_PRESET = { minFrequency: 50, maxFrequency: 500 };
+const FEMALE_VOICE_PRESET = { minFrequency: 80, maxFrequency: 1000 };
 
 export type PlayState = 'stopped' | 'loading-file' | 'loading-mic' | 'playing';
 
 export interface SettingsContainerProps {
-    onStop: () => void;
-    onClearSpectrogram: () => void;
+    onStopReference: () => void;
+    onStopPractice: () => void;
+    onClearReference: () => void;
+    onClearPractice: () => void;
     onRenderParametersUpdate: (settings: Partial<RenderParameters>) => void;
     onRenderFromMicrophone: () => void;
     onRenderFromFile: (file: ArrayBuffer) => void;
+    onLoadPinyinPreset: (syllable: string, gender: VoiceGender) => void;
+    onReplayReference: () => void;
+    onReRecord: () => void;
+    onSaveImage: () => void;
 }
 
 export type SettingsContainer = (props: SettingsContainerProps) => JSX.Element;
 
-function generateSettingsContainer(): [SettingsContainer, (playState: PlayState) => void] {
-    let setPlayStateExport: ((playState: PlayState) => void) | null = null;
+function generateSettingsContainer(): [
+    SettingsContainer,
+    (playState: PlayState) => void,
+    (playState: PlayState) => void,
+    (has: boolean) => void
+] {
+    let setReferencePlayStateExport: ((playState: PlayState) => void) | null = null;
+    let setPracticePlayStateExport: ((playState: PlayState) => void) | null = null;
+    let setHasReferenceExport: ((has: boolean) => void) | null = null;
 
     const SettingsContainer = ({
-        onStop,
-        onClearSpectrogram,
+        onStopReference,
+        onStopPractice,
+        onClearReference,
+        onClearPractice,
         onRenderParametersUpdate,
         onRenderFromMicrophone,
         onRenderFromFile,
+        onLoadPinyinPreset,
+        onReplayReference,
+        onReRecord,
+        onSaveImage,
     }: SettingsContainerProps) => {
         const { current: defaultParameters } = useRef({
-            sensitivity: 0.5,
-            contrast: 0.5,
-            zoom: 4,
-            minFrequency: 10,
-            maxFrequency: 12000,
-            scale: 'mel' as Scale,
-            gradient: 'Heated Metal',
+            sensitivity: 0.45,
+            contrast: 0.35,
+            zoom: 6,
+            minFrequency: 50,
+            maxFrequency: 800,
         });
 
-        const classes = useStyles();
         const isMobile = useMediaQuery('(max-width: 800px)');
         const [settingsOpen, setSettingsOpen] = useState(false);
-
-        const openSettings = useCallback(() => setSettingsOpen(true), [setSettingsOpen]);
-        const closeSettings = useCallback(() => setSettingsOpen(false), [setSettingsOpen]);
+        const [presetKey, setPresetKey] = useState(0);
+        const [showAdvanced, setShowAdvanced] = useState(false);
 
         const onInnerPaperClick = useCallback((e: MouseEvent) => e.stopPropagation(), []);
 
         const fileRef = useRef<HTMLInputElement | null>(null);
 
-        const [playState, setPlayState] = useState<PlayState>('stopped');
+        const [referencePlayState, setReferencePlayState] = useState<PlayState>('stopped');
+        const [practicePlayState, setPracticePlayState] = useState<PlayState>('stopped');
+        const [hasReference, setHasReference] = useState(false);
+        const [selectedSyllable, setSelectedSyllable] = useState(DEFAULT_SYLLABLE);
+        const [voicePreset, setVoicePreset] = useState<VoiceGender>(DEFAULT_GENDER);
+        const [syllableFilter, setSyllableFilter] = useState('');
+        const searchRef = useRef<HTMLInputElement | null>(null);
+        const filteredSyllables = useMemo(
+            () => syllableFilter
+                ? PINYIN_SYLLABLES.filter((s) => s.startsWith(syllableFilter.toLowerCase()))
+                : PINYIN_SYLLABLES,
+            [syllableFilter]
+        );
         const [SensitivitySlider, setSensitivity] = useMemo(generateLabelledSlider, []);
         const [ContrastSlider, setContrast] = useMemo(generateLabelledSlider, []);
         const [ZoomSlider, setZoom] = useMemo(generateLabelledSlider, []);
         const [MinFrequencySlider, setMinFrequency] = useMemo(generateLabelledSlider, []);
         const [MaxFrequencySlider, setMaxFrequency] = useMemo(generateLabelledSlider, []);
 
+        const onSyllableChange = useCallback(
+            (value: string) => {
+                setSelectedSyllable(value);
+                onLoadPinyinPreset(value, voicePreset);
+            },
+            [onLoadPinyinPreset, voicePreset]
+        );
+
         const onPlayMicrophoneClick = useCallback(() => {
-            setPlayState('loading-mic');
+            setPracticePlayState('loading-mic');
             onRenderFromMicrophone();
-        }, [onRenderFromMicrophone, setPlayState]);
+        }, [onRenderFromMicrophone]);
         const onPlayFileClick = useCallback(() => {
-            if (fileRef.current === null) {
-                return;
-            }
+            if (fileRef.current === null) return;
             fileRef.current.click();
-        }, [fileRef]);
+        }, []);
         const onFileChange = useCallback(() => {
             if (
                 fileRef.current === null ||
                 fileRef.current.files === null ||
                 fileRef.current.files.length !== 1
-            ) {
-                return;
-            }
+            ) return;
 
             const file = fileRef.current.files[0];
             const reader = new FileReader();
-            setPlayState('loading-file');
+            setReferencePlayState('loading-file');
             reader.addEventListener('load', () => {
-                if (fileRef.current !== null) {
-                    fileRef.current.value = '';
-                }
-
+                if (fileRef.current !== null) fileRef.current.value = '';
                 if (reader.result instanceof ArrayBuffer) {
+                    setHasReference(true);
                     onRenderFromFile(reader.result);
                 } else {
-                    setPlayState('stopped');
+                    setReferencePlayState('stopped');
                 }
             });
             reader.readAsArrayBuffer(file);
-        }, [fileRef, setPlayState, onRenderFromFile]);
-        const onStopClick = useCallback(() => {
-            onStop();
-            setPlayState('stopped');
-        }, [setPlayState]);
+        }, [onRenderFromFile]);
+        const onStopReferenceClick = useCallback(() => {
+            onStopReference();
+            setReferencePlayState('stopped');
+        }, [onStopReference]);
+        const onReplayClick = useCallback(() => {
+            setReferencePlayState('loading-file');
+            onReplayReference();
+        }, [onReplayReference]);
+        const onStopPracticeClick = useCallback(() => {
+            onStopPractice();
+            setPracticePlayState('stopped');
+        }, [onStopPractice]);
+        const onReRecordClick = useCallback(() => {
+            setPracticePlayState('loading-mic');
+            onReRecord();
+        }, [onReRecord]);
         const onSensitivityChange = useCallback(
             (value: number) => {
                 defaultParameters.sensitivity = value;
@@ -225,7 +188,7 @@ function generateSettingsContainer(): [SettingsContainer, (playState: PlayState)
                 onRenderParametersUpdate({ contrast: scaledValue });
                 setContrast(formatPercentage(value));
             },
-            [onRenderParametersUpdate, setSensitivity]
+            [onRenderParametersUpdate, setContrast]
         );
         const onZoomChange = useCallback(
             (value: number) => {
@@ -233,84 +196,109 @@ function generateSettingsContainer(): [SettingsContainer, (playState: PlayState)
                 onRenderParametersUpdate({ zoom: value });
                 setZoom(formatPercentage(value));
             },
-            [onRenderParametersUpdate, setSensitivity]
+            [onRenderParametersUpdate, setZoom]
         );
         const onMinFreqChange = useCallback(
             (value: number) => {
-                const hz = melToHz(value);
-                defaultParameters.minFrequency = hz;
-                onRenderParametersUpdate({ minFrequencyHz: hz });
-                setMinFrequency(formatHz(hz));
+                defaultParameters.minFrequency = value;
+                onRenderParametersUpdate({ minFrequencyHz: value });
+                setMinFrequency(formatHz(value));
             },
-            [onRenderParametersUpdate, setSensitivity]
+            [onRenderParametersUpdate, setMinFrequency]
         );
         const onMaxFreqChange = useCallback(
             (value: number) => {
-                const hz = melToHz(value);
-                defaultParameters.maxFrequency = hz;
-                onRenderParametersUpdate({ maxFrequencyHz: hz });
-                setMaxFrequency(formatHz(hz));
+                defaultParameters.maxFrequency = value;
+                onRenderParametersUpdate({ maxFrequencyHz: value });
+                setMaxFrequency(formatHz(value));
             },
-            [onRenderParametersUpdate, setSensitivity]
+            [onRenderParametersUpdate, setMaxFrequency]
         );
-        const onScaleChange = useCallback(
-            (event: ChangeEvent<{ name?: string | undefined; value: unknown }>) => {
-                if (typeof event.target.value === 'string') {
-                    defaultParameters.scale = event.target.value as Scale;
-                    onRenderParametersUpdate({ scale: event.target.value as Scale });
-                }
+
+        const applyPreset = useCallback(
+            (preset: { minFrequency: number; maxFrequency: number }) => {
+                defaultParameters.minFrequency = preset.minFrequency;
+                defaultParameters.maxFrequency = preset.maxFrequency;
+                onRenderParametersUpdate({
+                    minFrequencyHz: preset.minFrequency,
+                    maxFrequencyHz: preset.maxFrequency,
+                });
+                setMinFrequency(formatHz(preset.minFrequency));
+                setMaxFrequency(formatHz(preset.maxFrequency));
+                setPresetKey((k) => k + 1);
             },
-            [onRenderParametersUpdate]
-        );
-        const onGradientChange = useCallback(
-            (event: ChangeEvent<{ name?: string | undefined; value: unknown }>) => {
-                if (typeof event.target.value === 'string') {
-                    const gradientData = GRADIENTS.find((g) => g.name === event.target.value);
-                    if (gradientData !== undefined) {
-                        defaultParameters.gradient = gradientData.name;
-                        onRenderParametersUpdate({ gradient: gradientData.gradient });
-                    }
-                }
-            },
-            [onRenderParametersUpdate]
+            [onRenderParametersUpdate, setMinFrequency, setMaxFrequency]
         );
 
         useEffect(() => {
-            setPlayStateExport = setPlayState;
-        }, [setPlayState]);
+            setReferencePlayStateExport = setReferencePlayState;
+            setPracticePlayStateExport = setPracticePlayState;
+            setHasReferenceExport = setHasReference;
+        }, []);
 
         // Update all parameters on mount
         useEffect(() => {
             onSensitivityChange(defaultParameters.sensitivity);
             onContrastChange(defaultParameters.contrast);
             onZoomChange(defaultParameters.zoom);
-            onMinFreqChange(hzToMel(defaultParameters.minFrequency));
-            onMaxFreqChange(hzToMel(defaultParameters.maxFrequency));
-            onRenderParametersUpdate({ scale: defaultParameters.scale });
-
-            const gradientData = GRADIENTS.find((g) => g.name === defaultParameters.gradient);
-            if (gradientData !== undefined) {
-                onRenderParametersUpdate({ gradient: gradientData.gradient });
-            }
+            onMinFreqChange(defaultParameters.minFrequency);
+            onMaxFreqChange(defaultParameters.maxFrequency);
+            onRenderParametersUpdate({ scale: 'linear' });
+            onRenderParametersUpdate({ gradient: HEATED_METAL_GRADIENT });
         }, []);
 
         const content = (
             <>
-                <div className={classes.buttonContainer}>
-                    <Button
-                        fullWidth
-                        variant="contained"
-                        color="primary"
-                        onClick={onPlayMicrophoneClick}
-                        startIcon={<MicIcon />}
-                        disabled={playState !== 'stopped'}
-                    >
-                        Record from mic
-                    </Button>
-                    {playState === 'loading-mic' && (
-                        <CircularProgress size={24} className={classes.buttonProgress} />
-                    )}
+                <div className="flex justify-center mb-6">
+                    <img src="shengpuer-logo.png" alt="Shengpu" className="w-40 h-40 rounded-[32px]" />
                 </div>
+
+                <p className="m-0 mb-3 opacity-40 text-[0.6rem] uppercase tracking-[0.08em]">
+                    Reference
+                </p>
+                <Select
+                    value={selectedSyllable}
+                    onValueChange={onSyllableChange}
+                    onOpenChange={(open) => {
+                        if (!open) setSyllableFilter('');
+                        else setTimeout(() => searchRef.current?.focus(), 0);
+                    }}
+                >
+                    <SelectTrigger className="mb-2">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <div className="px-2 pt-1 sticky top-0 bg-[#333] z-[1]">
+                            <input
+                                ref={searchRef}
+                                className="w-full box-border px-2 py-1.5 border border-white/[0.23] rounded bg-black/30 text-foreground text-[0.8125rem] outline-none focus:border-primary placeholder:text-white/40"
+                                type="text"
+                                placeholder="Search..."
+                                value={syllableFilter}
+                                onChange={(e) => setSyllableFilter(e.target.value)}
+                                onKeyDown={(e) => e.stopPropagation()}
+                            />
+                        </div>
+                        <SelectViewport>
+                            {!syllableFilter && TONE_GROUPS.map((group) => (
+                                <SelectGroup key={group.label}>
+                                    <SelectLabel>{group.label}</SelectLabel>
+                                    {group.combos.map((c) => (
+                                        <SelectItem key={c.id} value={`combo:${c.id}`}>
+                                            {c.pinyin} {c.meaning} ({c.tones})
+                                        </SelectItem>
+                                    ))}
+                                </SelectGroup>
+                            ))}
+                            <SelectGroup>
+                                <SelectLabel>Syllables</SelectLabel>
+                                {filteredSyllables.map((s) => (
+                                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                                ))}
+                            </SelectGroup>
+                        </SelectViewport>
+                    </SelectContent>
+                </Select>
                 <input
                     type="file"
                     style={{ display: 'none' }}
@@ -318,179 +306,246 @@ function generateSettingsContainer(): [SettingsContainer, (playState: PlayState)
                     onChange={onFileChange}
                     ref={fileRef}
                 />
-                <div className={classes.buttonContainer}>
-                    <Button
-                        fullWidth
-                        variant="contained"
-                        color="primary"
-                        onClick={onPlayFileClick}
-                        startIcon={<AudiotrackIcon />}
-                        disabled={playState !== 'stopped'}
-                    >
-                        Play audio file
-                    </Button>
-                    {playState === 'loading-file' && (
-                        <CircularProgress size={24} className={classes.buttonProgress} />
+                <div className="relative mb-2">
+                    {referencePlayState === 'playing' ? (
+                        <Button size="sm" fullWidth onClick={onStopReferenceClick}>
+                            Stop
+                        </Button>
+                    ) : (
+                        <Button variant="outline" size="sm" fullWidth onClick={onPlayFileClick} disabled={referencePlayState !== 'stopped'}>
+                            <UploadIcon /> Upload audio
+                        </Button>
                     )}
+                    {referencePlayState === 'loading-file' && (
+                        <span className="absolute top-1/2 left-1/2 -mt-3 -ml-3 inline-block w-6 h-6 border-[3px] border-white/20 border-t-secondary rounded-full animate-spin" />
+                    )}
+                </div>
+                <div className="flex justify-between mb-6">
+                    <Button
+                        variant="ghost"
+                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                        onClick={onReplayClick}
+                        disabled={!hasReference || referencePlayState !== 'stopped'}
+                    >
+                        Replay
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                        onClick={onClearReference}
+                        disabled={referencePlayState === 'playing'}
+                    >
+                        Clear
+                    </Button>
+                </div>
+
+                <p className="m-0 mb-3 opacity-40 text-[0.6rem] uppercase tracking-[0.08em]">
+                    Your voice
+                </p>
+                <div className="relative mb-2">
+                    {practicePlayState === 'playing' ? (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            fullWidth
+                            onClick={onStopPracticeClick}
+                            className="spectro-recording-btn bg-[rgba(229,57,53,0.1)] border border-[rgba(229,57,53,0.3)] hover:bg-[rgba(229,57,53,0.2)]"
+                        >
+                            <RecordDot pulsing /> Recording
+                        </Button>
+                    ) : (
+                        <Button size="sm" fullWidth onClick={onPlayMicrophoneClick} disabled={practicePlayState !== 'stopped'}>
+                            <RecordDot pulsing={practicePlayState === 'loading-mic'} /> Record
+                        </Button>
+                    )}
+                </div>
+                <div className="flex justify-between mb-6">
+                    <Button
+                        variant="ghost"
+                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                        onClick={onReRecordClick}
+                        disabled={practicePlayState === 'loading-mic'}
+                    >
+                        Redo
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        className="text-[0.65rem] px-2 py-0.5 min-w-0 normal-case opacity-60"
+                        onClick={onClearPractice}
+                        disabled={practicePlayState === 'playing'}
+                    >
+                        Clear
+                    </Button>
+                </div>
+
+                <Button variant="outline" size="sm" fullWidth onClick={onSaveImage}>
+                    <CameraIcon /> Save snapshot
+                </Button>
+
+                <Separator className="mt-4 mb-6" />
+
+                <div className="flex gap-2 mb-4">
+                    <Button
+                        variant={voicePreset === 'male' ? 'default' : 'outline'}
+                        size="sm"
+                        fullWidth
+                        onClick={() => {
+                            setVoicePreset('male');
+                            applyPreset(MALE_VOICE_PRESET);
+                            onLoadPinyinPreset(selectedSyllable, 'male');
+                        }}
+                    >
+                        Male
+                    </Button>
+                    <Button
+                        variant={voicePreset === 'female' ? 'default' : 'outline'}
+                        size="sm"
+                        fullWidth
+                        onClick={() => {
+                            setVoicePreset('female');
+                            applyPreset(FEMALE_VOICE_PRESET);
+                            onLoadPinyinPreset(selectedSyllable, 'female');
+                        }}
+                    >
+                        Female
+                    </Button>
                 </div>
 
                 <Button
+                    variant="ghost"
+                    size="sm"
                     fullWidth
-                    className={classes.lastButton}
-                    variant="outlined"
-                    color="secondary"
-                    onClick={onStopClick}
-                    startIcon={<StopIcon />}
-                    disabled={playState !== 'playing'}
+                    className="opacity-50 text-[0.65rem] tracking-[0.05em]"
+                    onClick={() => setShowAdvanced((v) => !v)}
                 >
-                    Stop
+                    Advanced
+                    <ExpandMoreIcon
+                        fontSize="small"
+                        style={{
+                            transform: showAdvanced ? 'rotate(180deg)' : 'none',
+                            transition: 'transform 0.2s',
+                        }}
+                    />
                 </Button>
-
-                <Divider className={classes.divider} />
-
-                <SensitivitySlider
-                    nameLabelId="sensitivity-slider-label"
-                    nameLabel="Sensitivity"
-                    min={0}
-                    max={1}
-                    step={0.001}
-                    defaultValue={defaultParameters.sensitivity}
-                    onChange={onSensitivityChange}
-                />
-                <ContrastSlider
-                    nameLabelId="contrast-slider-label"
-                    nameLabel="Contrast"
-                    min={0}
-                    max={1}
-                    step={0.001}
-                    defaultValue={defaultParameters.contrast}
-                    onChange={onContrastChange}
-                />
-                <ZoomSlider
-                    nameLabelId="zoom-slider-label"
-                    nameLabel="Zoom"
-                    min={1}
-                    max={10}
-                    step={0.01}
-                    defaultValue={defaultParameters.zoom}
-                    onChange={onZoomChange}
-                />
-                <MinFrequencySlider
-                    nameLabelId="min-freq-slider-label"
-                    nameLabel="Min. frequency"
-                    min={hzToMel(0)}
-                    max={hzToMel(20000)}
-                    step={1}
-                    defaultValue={hzToMel(defaultParameters.minFrequency)}
-                    onChange={onMinFreqChange}
-                />
-                <MaxFrequencySlider
-                    nameLabelId="max-freq-slider-label"
-                    nameLabel="Max. frequency"
-                    min={hzToMel(0)}
-                    max={hzToMel(20000)}
-                    step={1}
-                    defaultValue={hzToMel(defaultParameters.maxFrequency)}
-                    onChange={onMaxFreqChange}
-                />
-                <FormControl className={classes.select}>
-                    <InputLabel id="scale-select-label">Frequency scale</InputLabel>
-                    <Select
-                        labelId="scale-select-label"
-                        id="scale-select"
-                        defaultValue={defaultParameters.scale}
-                        onChange={onScaleChange}
-                    >
-                        <MenuItem value="mel">Mel</MenuItem>
-                        <MenuItem value="linear">Linear</MenuItem>
-                    </Select>
-                </FormControl>
-                <FormControl className={classes.select}>
-                    <InputLabel id="gradient-select-label">Colour</InputLabel>
-                    <Select
-                        labelId="gradient-select-label"
-                        id="gradient-select"
-                        defaultValue={defaultParameters.gradient}
-                        onChange={onGradientChange}
-                    >
-                        {GRADIENTS.map((g) => (
-                            <MenuItem value={g.name} key={g.name}>
-                                {g.name}
-                            </MenuItem>
-                        ))}
-                    </Select>
-                </FormControl>
-                <Button
-                    fullWidth
-                    variant="text"
-                    color="secondary"
-                    onClick={onClearSpectrogram}
-                    startIcon={<ClearIcon />}
-                >
-                    Clear spectrogram
-                </Button>
+                {showAdvanced && (
+                    <>
+                        <SensitivitySlider
+                            key={`sensitivity-${presetKey}`}
+                            nameLabelId="sensitivity-slider-label"
+                            nameLabel="Brightness"
+                            min={0}
+                            max={1}
+                            step={0.001}
+                            defaultValue={defaultParameters.sensitivity}
+                            onChange={onSensitivityChange}
+                        />
+                        <ContrastSlider
+                            key={`contrast-${presetKey}`}
+                            nameLabelId="contrast-slider-label"
+                            nameLabel="Contrast"
+                            min={0}
+                            max={1}
+                            step={0.001}
+                            defaultValue={defaultParameters.contrast}
+                            onChange={onContrastChange}
+                        />
+                        <ZoomSlider
+                            key={`zoom-${presetKey}`}
+                            nameLabelId="zoom-slider-label"
+                            nameLabel="Time stretch"
+                            min={1}
+                            max={10}
+                            step={0.01}
+                            defaultValue={defaultParameters.zoom}
+                            onChange={onZoomChange}
+                        />
+                        <MinFrequencySlider
+                            key={`min-freq-${presetKey}`}
+                            nameLabelId="min-freq-slider-label"
+                            nameLabel="Lower pitch"
+                            min={0}
+                            max={2000}
+                            step={1}
+                            defaultValue={defaultParameters.minFrequency}
+                            onChange={onMinFreqChange}
+                        />
+                        <MaxFrequencySlider
+                            key={`max-freq-${presetKey}`}
+                            nameLabelId="max-freq-slider-label"
+                            nameLabel="Upper pitch"
+                            min={0}
+                            max={2000}
+                            step={1}
+                            defaultValue={defaultParameters.maxFrequency}
+                            onChange={onMaxFreqChange}
+                        />
+                    </>
+                )}
             </>
         );
 
         return (
-            <ThemeProvider theme={controlsTheme}>
-                <ScopedCssBaseline>
-                    {isMobile ? (
-                        <>
+            <div>
+                {isMobile ? (
+                    <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                        <DialogTrigger asChild>
                             <Button
-                                size="large"
-                                className={classes.settingsButton}
-                                variant="contained"
-                                color="primary"
-                                startIcon={<SettingsIcon />}
-                                onClick={openSettings}
-                                disableElevation
+                                size="lg"
+                                className="rounded-t-2xl rounded-b-none px-6 py-3"
                             >
-                                Settings
+                                <SettingsIcon /> Settings
                             </Button>
-                            <Drawer
-                                anchor="bottom"
-                                open={settingsOpen}
-                                onClose={closeSettings}
-                                classes={{
-                                    paperAnchorBottom: classes.settingsDrawer,
-                                }}
-                                PaperProps={{ elevation: 0, onClick: closeSettings }}
+                        </DialogTrigger>
+                        <DialogContent>
+                            <div
+                                className="rounded-t-2xl max-w-[300px] p-4 mx-auto mt-4 bg-[rgba(34,34,34,0.5)] backdrop-blur-2xl"
+                                onClick={onInnerPaperClick}
                             >
-                                <Paper
-                                    classes={{ root: classes.settingsDrawerInner }}
-                                    elevation={16}
-                                    onClick={onInnerPaperClick}
-                                >
-                                    <div className={classes.settingsHeader}>
-                                        <IconButton
+                                <div className="flex items-center gap-2 mb-2">
+                                    <DialogClose asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="-ml-3 -my-3 w-12 h-12"
                                             aria-label="close"
-                                            onClick={closeSettings}
-                                            className={classes.closeButton}
                                         >
                                             <CloseIcon />
-                                        </IconButton>
-                                        <Typography variant="subtitle1">Settings</Typography>
-                                    </div>
-                                    {content}
-                                </Paper>
-                            </Drawer>
-                        </>
-                    ) : (
-                        content
-                    )}
-                </ScopedCssBaseline>
-            </ThemeProvider>
+                                        </Button>
+                                    </DialogClose>
+                                    <span className="text-base font-normal leading-[1.75] tracking-[0.00938em]">
+                                        Settings
+                                    </span>
+                                </div>
+                                {content}
+                            </div>
+                        </DialogContent>
+                    </Dialog>
+                ) : (
+                    content
+                )}
+            </div>
         );
     };
 
     return [
         SettingsContainer,
         (playState) => {
-            if (setPlayStateExport !== null) {
-                setPlayStateExport(playState);
+            if (setReferencePlayStateExport !== null) {
+                setReferencePlayStateExport(playState);
             } else {
-                throw new Error('Attempt to set play state before component mount');
+                throw new Error('Attempt to set reference play state before component mount');
+            }
+        },
+        (playState) => {
+            if (setPracticePlayStateExport !== null) {
+                setPracticePlayStateExport(playState);
+            } else {
+                throw new Error('Attempt to set practice play state before component mount');
+            }
+        },
+        (has) => {
+            if (setHasReferenceExport !== null) {
+                setHasReferenceExport(has);
             }
         },
     ];

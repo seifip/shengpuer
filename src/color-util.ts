@@ -13,59 +13,6 @@ export const HEATED_METAL_GRADIENT: Gradient = [
     { stop: 1.0, color: [255, 255, 255] },
 ];
 
-// Taken from:
-// https://github.com/audacity/audacity/blob/0c44d0f7d31139ec6e9acb13ee246238a4863968/src/AllThemeResources.h#L361-L365
-export const AUDACITY_GRADIENT: Gradient = [
-    { stop: 0, color: [191, 191, 191] },
-    { stop: 0.25, color: [76, 153, 255] },
-    { stop: 0.5, color: [229, 25, 229] },
-    { stop: 0.75, color: [255, 0, 0] },
-    { stop: 1.0, color: [255, 255, 255] },
-];
-
-export const SPECTRUM_GRADIENT: Gradient = [
-    { stop: 0, color: [0, 0, 128] },
-    { stop: 0.25, color: [0, 160, 160] },
-    { stop: 0.5, color: [0, 190, 0] },
-    { stop: 0.75, color: [225, 225, 0] },
-    { stop: 1.0, color: [255, 0, 0] },
-];
-
-export const BLACK_WHITE_GRADIENT: Gradient = [
-    { stop: 0, color: [0, 0, 0] },
-    { stop: 0.5, color: [119, 119, 119] },
-    { stop: 1.0, color: [255, 255, 255] },
-];
-
-export const WHITE_BLACK_GRADIENT: Gradient = [
-    { stop: 0, color: [255, 255, 255] },
-    { stop: 0.5, color: [119, 119, 119] },
-    { stop: 1.0, color: [0, 0, 0] },
-];
-
-export const GRADIENTS: { name: string; gradient: Gradient }[] = [
-    {
-        name: 'Heated Metal',
-        gradient: HEATED_METAL_GRADIENT,
-    },
-    {
-        name: 'Audacity®',
-        gradient: AUDACITY_GRADIENT,
-    },
-    {
-        name: 'Spectrum',
-        gradient: SPECTRUM_GRADIENT,
-    },
-    {
-        name: 'Black to White',
-        gradient: BLACK_WHITE_GRADIENT,
-    },
-    {
-        name: 'White to Black',
-        gradient: WHITE_BLACK_GRADIENT,
-    },
-];
-
 function addGamma(u: number): number {
     if (u <= 0.0031308) {
         return 12.92 * u;

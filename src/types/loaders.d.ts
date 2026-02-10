@@ -12,3 +12,5 @@ declare module '*.glsl' {
     const shader: GlslShader;
     export default shader;
 }
+
+declare module '*.css';
